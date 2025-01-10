@@ -49,6 +49,13 @@ def roundTime(roundTo, now=None):
     else:
         return now + dt.timedelta(0,rounding-seconds,-now.microsecond)
 
+def roundTime_forward(interval=60, now_var=None):
+    if now_var == None: now_var = dt.datetime.now().replace(microsecond=0)
+    seconds = (now_var.replace(tzinfo=None) - now_var.min).seconds
+    rounding = (seconds + interval) // interval * interval
+    result = now_var + dt.timedelta(0, rounding-seconds, -now_var.microsecond)
+    return result
+
 def wait_to_next_interval(interval):
     """
     Waits for the next interval boundary.
@@ -56,13 +63,11 @@ def wait_to_next_interval(interval):
     Args:
         interval: Interval in seconds.
     """
-    previous_interval = roundTime(interval, now=None)
     time_now = dt.datetime.now()
-    sec_to_next_interval = abs(interval - (time_now-previous_interval).total_seconds())
-    next_interval = roundTime(interval, now=time_now)
-    # sec_to_next_interval = abs((next_interval - time_now).total_seconds())
-    print(f'Waiting {sec_to_next_interval:.2f} seconds for the next interval')
-    time.sleep(sec_to_next_interval)
+    next_interval = roundTime_forward(interval, now_var=time_now)
+    sec_from_last_interval = ((next_interval-time_now).total_seconds())
+    print(f'Waiting {sec_from_last_interval:.2f} seconds for the next interval')
+    time.sleep(sec_from_last_interval)
 
 def get_data(IP, starttime=time.time(), interval=60):
     data = []
@@ -121,8 +126,8 @@ def get_data(IP, starttime=time.time(), interval=60):
                 aggregated[i_agg][2] += data[i][2]
                 total_up += data[i][1]
                 total_dn += data[i][2]
-        persistence.add_raw_data(aggregated[i_agg][0], aggregated[i_agg][1], aggregated[i_agg][2], now.strftime('%Y-%m-%d %H:%M:00'))
-    persistence.add_raw_data(1, total_up, total_dn, now.strftime('%Y-%m-%d %H:%M:00'))
+        persistence.add_raw_data(aggregated[i_agg][0], aggregated[i_agg][1], aggregated[i_agg][2], dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+    persistence.add_raw_data(1, total_up, total_dn, dt.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
 
 def aggregate_data_30_min():
     try:
@@ -130,10 +135,21 @@ def aggregate_data_30_min():
         user_list = [user['username'] for user in user_list_with_id]
         for user in user_list:
             user_id = persistence.get_user_id_from_username(user)
-            result = persistence.query_db('SELECT SUM(tx_bytes) as total_tx_bytes, SUM(rx_bytes) as total_rx_bytes FROM raw_bandwidth_logs WHERE user_id = %s AND timestamp >= %s AND timestamp < %s', (user_id, now - dt.timedelta(minutes=30), now))
+            count = persistence.query_db('SELECT COUNT(*) as count FROM raw_bandwidth_logs WHERE user_id = %s', [(user_id)])[0]['count']
+            if count == 0:
+                continue
+            result = persistence.query_db('SELECT SUM(tx_bytes) as total_tx_bytes, SUM(rx_bytes) as total_rx_bytes FROM raw_bandwidth_logs WHERE user_id = %s', [(user_id)])
+            timestamps = persistence.query_db('SELECT timestamp FROM raw_bandwidth_logs WHERE user_id = %s', [(user_id)])
+
+            timestamp_values = [entry['timestamp'] for entry in timestamps]
+            earliest_time = min(timestamp_values)
+            latest_time = max(timestamp_values)
+
             total_tx_bytes = result[0]['total_tx_bytes']
             total_rx_bytes = result[0]['total_rx_bytes']
-            persistence.query_db('INSERT INTO aggregated_bandwidth_logs_30min (user_id, interval_start, interval_end, total_tx_bytes, total_rx_bytes) VALUES (%s, %s, %s, %s, %s)', (user_id, now - dt.timedelta(minutes=30), now, total_tx_bytes, total_rx_bytes))
+            
+            persistence.aggregate_data(user_id, earliest_time, latest_time, total_tx_bytes, total_rx_bytes)
+            
     except Exception as E:
         print("error: ", E)
         print(traceback.format_exc())
@@ -141,16 +157,25 @@ def aggregate_data_30_min():
 if __name__ == '__main__':
     try:
         IP_MIKROTIK, LOG_INTERVAL, AGGREGATE_INTERVAL = read_settings('config.ini')
-        start_time = time.time()
-        wait_to_next_interval(LOG_INTERVAL)  # Align main function to minute boundary
+        start_time = dt.datetime.now().replace(microsecond=0)
+        aggregate_time = roundTime_forward(AGGREGATE_INTERVAL, now_var=start_time)
+
 
         while True:
             get_data(IP_MIKROTIK)
-            print(f'executed_at: {dt.datetime.now()}')
-            wait_to_next_interval(LOG_INTERVAL)
+            print(f'get_data_at: {dt.datetime.now().replace(microsecond=0)}')
+            current_time = dt.datetime.now().replace(microsecond=0)
 
-            if (time.time() - start_time) % AGGREGATE_INTERVAL == 0: 
+            if ( current_time >= aggregate_time):
+                print(f'next_aggregate_time: {aggregate_time}')
+                print( f'current_time: {current_time}')
                 aggregate_data_30_min()
+                aggregate_time = roundTime_forward(AGGREGATE_INTERVAL, now_var=current_time)
+                print(f'aggregate_data_at: {dt.datetime.now().replace(microsecond=0)}')
+                wait_to_next_interval(LOG_INTERVAL)
+
+            wait_to_next_interval(LOG_INTERVAL)  # Align main function to minute boundary
+
     except KeyboardInterrupt as E:
         print(traceback.format_exc())
         os._exit(0)

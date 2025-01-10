@@ -3,10 +3,14 @@ import mysql.connector
 def get_db():
     try:
         db = mysql.connector.connect(
-            host="172.19.0.3",
-            user="test_mikrotik_stat",
-            password="1sampai8*mikrotik",
-            database="test_mikrotik_stat"
+            # host="172.19.0.3",
+            # user="test_mikrotik_stat",
+            # password="1sampai8*mikrotik",
+            # database="test_mikrotik_stat"
+            host="localhost",
+            user="root",
+            password="",
+            database="test_mikrotik"
         )
         # print("Koneksi ke DB berhasil")
     except mysql.connector.Error as err:
@@ -131,6 +135,16 @@ def add_raw_data(user_id, tx_bytes, rx_bytes, timestamp):
         db = get_db()
         cursor = db.cursor()
         cursor.execute('INSERT INTO raw_bandwidth_logs (user_id, tx_bytes, rx_bytes, timestamp) VALUES (%s, %s, %s, %s)', (user_id, tx_bytes, rx_bytes, timestamp))
+        db.commit()
+    except Exception as E:
+        print("error: ", E)
+
+def aggregate_data(user_id, earliest_time, latest_time, total_tx_bytes, total_rx_bytes):
+    try:
+        db = get_db()
+        cursor = db.cursor()
+        cursor.execute('INSERT INTO aggregated_bandwidth_logs_30min (user_id, interval_start, interval_end, total_tx_bytes, total_rx_bytes) VALUES (%s, %s, %s, %s, %s)', (user_id, earliest_time, latest_time, total_tx_bytes, total_rx_bytes))
+        cursor.execute('DELETE FROM raw_bandwidth_logs WHERE user_id = %s', (user_id,))
         db.commit()
     except Exception as E:
         print("error: ", E)
