@@ -115,7 +115,9 @@
                                 tooltip: {
                                     callbacks: {
                                         label: function (context) {
-                                            return `${context.dataset.label}: ${context.raw} bytes`;
+                                            const valueInBytes = context.raw;
+                                            const valueInMB = (valueInBytes / (1024 * 1024)).toFixed(2);
+                                            return `${context.dataset.label}: ${valueInMB} MB`;
                                         }
                                     }
                                 }
@@ -136,12 +138,16 @@
                                     title: {
                                         display: true,
                                         text: 'Megabytes'
+                                    },
+                                    ticks: {
+                                        callback: function (value) {
+                                            return `${(value / (1024 * 1024)).toFixed(2)} MB`;
+                                        }
                                     }
                                 }
                             }
                         }
                     });
-
                 }
 
                 $scope.fetchRealtimeData = function () {
@@ -204,23 +210,21 @@
 <body ng-app="app">
     <div id="example" class="container">
         <section class="well">
-            <h2 class="ra-well-title">Getting started</h2>
+            <h2 class="ra-well-title">WiFI Monitor Asrama Mahasiswa Sulaimaniyah</h2>
             <p>
-                This is a simple web application to monitor internet usage of Camlica. It uses AngularJS and Kendo UI.
+                This is a simple web application to monitor internet usage of Camlica Talebe Yurdu. It uses AngularJS
+                and Kendo UI.
             </p>
         </section>
         <section ng-controller="statsController as ctrl">
             <div class="bs-example">
-                <h2>Real-Time Data Chart</h2>
+                <h2>Real-Time Usage Data Chart</h2>
                 <canvas id="realtimeChart" width="400" height="200"></canvas>
                 <div class="panel-body">
                     <input type="button" class="btn btn-small btn-default" value="Refresh" ng-click="fetch()" />
                 </div>
                 <div class="panel panel-default">
                     <div class="panel-heading">Total Usage </div>
-                    <div class="panel-body">
-                        <p></p>
-                    </div>
                     <table class="table">
                         <thead>
                             <tr>

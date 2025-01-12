@@ -4,5 +4,5 @@ LOG_INTERVAL                = 10
 AGGREGATE_INTERVAL          = 1800
 DB_HOST                     = localhost
 DB_USER                     = root
-DB_PASS                     = 
+DB_PASSWORD                 = 
 DB_NAME                     = test_mikrotik
