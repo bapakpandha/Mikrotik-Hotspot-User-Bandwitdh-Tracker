@@ -1,39 +1,97 @@
 import datetime as dt
 import urllib.request as req
 import time
-from configparser import SafeConfigParser, NoOptionError, NoSectionError
+from configparser import ConfigParser, NoOptionError, NoSectionError
 import warnings
 import traceback
 import os, sys
 import persistence
+import tracemalloc
+import logging
+import server
 
 now = dt.datetime.now()
 
-def read_settings(fn_ini_file):
-    config = SafeConfigParser()
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    filename='app.log',
+    filemode='a'
+)
+
+def read_settings(args):
+    config = ConfigParser()
+    fn_ini_file = 'config.ini'
     config.read(fn_ini_file)
-    try:
-        MIKROTIK_IP  = config.get('Settings', 'Router_IP')
-    except (NoSectionError, NoOptionError):
-        MIKROTIK_IP   = '192.168.100.8'
-        warn_msg = 'Parameter \'Router_IP\' was not found under section \
-                    \'Settings\'. The default ip of \'%s\' was used.' %MIKROTIK_IP
-        warnings.warn(warn_msg)
-    try:
-        LOG_INTERVAL  = config.getint('Settings', 'Logging_interval_seconds')
-    except (NoSectionError, NoOptionError):
-        LOG_INTERVAL  = 10
-        warn_msg = 'Parameter \'Logging_interval_seconds\' was not provided \
-                    under section \'Settings\'. The default log interval of %is was used.' %LOG_INTERVAL
-        warnings.warn(warn_msg)
-    try:
-        AGGREGATE_INTERVAL = config.getint('Settings', 'Aggregate_interval_seconds')
-    except (NoSectionError, NoOptionError):
-        AGGREGATE_INTERVAL = 1800
-        warn_msg = 'Parameter \'Aggregate_interval_seconds\' was not provided \
-                    under section \'Settings\'. The default log interval of %is was used.' %AGGREGATE_INTERVAL
-        warnings.warn(warn_msg)
-    return MIKROTIK_IP, LOG_INTERVAL, AGGREGATE_INTERVAL
+    match args:
+        case 'MIKROTIK_IP':
+            try:
+                MIKROTIK_IP  = config.get('Settings', 'MIKROTIK_IP')
+            except (NoSectionError, NoOptionError):
+                MIKROTIK_IP   = '192.168.100.8'
+                warn_msg = 'Parameter \'Router_IP\' was not found under section \
+                            \'Settings\'. The default ip of \'%s\' was used.' %MIKROTIK_IP
+                warnings.warn(warn_msg)
+            return MIKROTIK_IP
+        case 'LOG_INTERVAL':
+            try:
+                LOG_INTERVAL  = config.getint('Settings', 'LOG_INTERVAL')
+            except (NoSectionError, NoOptionError):
+                LOG_INTERVAL  = 10
+                warn_msg = 'Parameter \'LOG_INTERVAL\' was not provided \
+                            under section \'Settings\'. The default log interval of %is was used.' %LOG_INTERVAL
+                warnings.warn(warn_msg)
+            return LOG_INTERVAL
+        case 'AGGREGATE_INTERVAL':
+            try:
+                AGGREGATE_INTERVAL = config.getint('Settings', 'AGGREGATE_INTERVAL')
+            except (NoSectionError, NoOptionError):
+                AGGREGATE_INTERVAL = 1800
+                warn_msg = 'Parameter \'AGGREGATE_INTERVAL\' was not provided \
+                            under section \'Settings\'. The default log interval of %is was used.' %AGGREGATE_INTERVAL
+                warnings.warn(warn_msg)
+            return AGGREGATE_INTERVAL
+        case 'DB_NAME':
+            try:
+                DB_NAME = config.get('Settings', 'DB_NAME')
+            except (NoSectionError, NoOptionError):
+                DB_NAME = 'mikrotik'
+                warn_msg = 'Parameter \'DB_NAME\' was not provided \
+                            under section \'Settings\'. The default db name of %s was used.' %DB_NAME
+                warnings.warn(warn_msg)
+            return DB_NAME
+        case 'DB_USER':
+            try:
+                DB_USER = config.get('Settings', 'DB_USER')
+            except (NoSectionError, NoOptionError):
+                DB_USER = 'root'
+                warn_msg = 'Parameter \'DB_USER\' was not provided \
+                            under section \'Settings\'. The default db user of %s was used.' %DB_USER
+                warnings.warn(warn_msg)
+            return DB_USER
+        case 'DB_PASSWORD':
+            try:
+                DB_PASSWORD = config.get('Settings', 'DB_PASSWORD')
+            except (NoSectionError, NoOptionError):
+                DB_PASSWORD = ''
+                warn_msg = 'Parameter \'DB_PASSWORD\' was not provided \
+                            under section \'Settings\'. The default db password of %s was used.' %DB_PASSWORD
+                warnings.warn(warn_msg)
+            return DB_PASSWORD
+        case 'DB_HOST':
+            try:
+                DB_HOST = config.get('Settings', 'DB_HOST')
+            except (NoSectionError, NoOptionError):
+                DB_HOST = 'localhost'
+                warn_msg = 'Parameter \'DB_HOST\' was not provided \
+                            under section \'Settings\'. The default db host of %s was used.' %DB_HOST
+                warnings.warn(warn_msg) 
+            return DB_HOST
+        case __annotations__:  # If no match is found
+            raise ValueError(f'Invalid argument: {args}')
+        
+        
+
 
 def roundTime(roundTo, now=None):
     """Round a datetime object to any time laps in seconds
@@ -66,7 +124,7 @@ def wait_to_next_interval(interval):
     time_now = dt.datetime.now()
     next_interval = roundTime_forward(interval, now_var=time_now)
     sec_from_last_interval = ((next_interval-time_now).total_seconds())
-    print(f'Waiting {sec_from_last_interval:.2f} seconds for the next interval')
+    logging.info(f'Waiting {sec_from_last_interval:.2f} seconds for the next interval')
     time.sleep(sec_from_last_interval)
 
 def get_data(IP, starttime=time.time(), interval=60):
@@ -114,7 +172,7 @@ def get_data(IP, starttime=time.time(), interval=60):
                 all_users.append(user_id)
                 data.append([(user_id), 0.0, float(s[2])])
             else:
-                print(f'username tidak terdeteksi: {s}')
+                logging.info(f'username tidak terdeteksi: {s}')
 
     user_unique = list(set(all_users))
     aggregated = [[0.0] * 3 for _ in range(len(user_unique))] 
@@ -156,23 +214,29 @@ def aggregate_data_30_min():
 
 if __name__ == '__main__':
     try:
-        IP_MIKROTIK, LOG_INTERVAL, AGGREGATE_INTERVAL = read_settings('config.ini')
+        tracemalloc.start()
+        IP_MIKROTIK = read_settings('MIKROTIK_IP')
+        LOG_INTERVAL = read_settings('LOG_INTERVAL')
+        AGGREGATE_INTERVAL = read_settings('AGGREGATE_INTERVAL')
         start_time = dt.datetime.now().replace(microsecond=0)
         aggregate_time = roundTime_forward(AGGREGATE_INTERVAL, now_var=start_time)
-
+        server.start()
 
         while True:
             get_data(IP_MIKROTIK)
-            print(f'get_data_at: {dt.datetime.now().replace(microsecond=0)}')
+            logging.info(f'get_data_at: {dt.datetime.now().replace(microsecond=0)}')
             current_time = dt.datetime.now().replace(microsecond=0)
 
             if ( current_time >= aggregate_time):
-                print(f'next_aggregate_time: {aggregate_time}')
-                print( f'current_time: {current_time}')
+                logging.info(f'next_aggregate_time: {aggregate_time}')
+                logging.info( f'current_time: {current_time}')
                 aggregate_data_30_min()
                 aggregate_time = roundTime_forward(AGGREGATE_INTERVAL, now_var=current_time)
-                print(f'aggregate_data_at: {dt.datetime.now().replace(microsecond=0)}')
-                wait_to_next_interval(LOG_INTERVAL)
+                logging.info(f'aggregate_data_at: {dt.datetime.now().replace(microsecond=0)}')
+                
+                current, peak = tracemalloc.get_traced_memory()
+                logging.info(f"Current memory usage: {current / 1024 / 1024:.2f} MiB")
+                logging.info(f"Peak memory usage: {peak / 1024 / 1024:.2f} MiB")
 
             wait_to_next_interval(LOG_INTERVAL)  # Align main function to minute boundary
 

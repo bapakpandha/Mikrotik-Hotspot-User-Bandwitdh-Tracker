@@ -1,16 +1,13 @@
 import mysql.connector
+from app import read_settings
 
 def get_db():
     try:
         db = mysql.connector.connect(
-            # host="172.19.0.3",
-            # user="test_mikrotik_stat",
-            # password="1sampai8*mikrotik",
-            # database="test_mikrotik_stat"
-            host="localhost",
-            user="root",
-            password="",
-            database="test_mikrotik"
+            host=read_settings("DB_HOST"),
+            user=read_settings("DB_USER"),
+            password=read_settings("DB_PASSWORD"),
+            database=read_settings("DB_NAME")
         )
         # print("Koneksi ke DB berhasil")
     except mysql.connector.Error as err:
@@ -20,7 +17,6 @@ def get_db():
         print(f"Unexpected Error: {e}")
         db = None
     return db
-
 
 def init():
     try:
@@ -148,6 +144,25 @@ def aggregate_data(user_id, earliest_time, latest_time, total_tx_bytes, total_rx
         db.commit()
     except Exception as E:
         print("error: ", E)
+
+def get_detail(limit=150):
+    return query_db("SELECT a.username username, total_tx_bytes, total_rx_bytes, interval_end AS 'period' FROM aggregated_bandwidth_logs_30min LEFT JOIN users AS a ON a.user_id = aggregated_bandwidth_logs_30min.user_id ORDER BY interval_end DESC LIMIT %s;", [limit])
+
+def get_by_host():
+    return query_db("SELECT a.username username, CAST(SUM(total_tx_bytes) AS INT) AS total_tx_bytes, CAST(SUM(total_rx_bytes) AS INT) AS total_rx_bytes FROM aggregated_bandwidth_logs_30min LEFT JOIN users AS a ON a.user_id = aggregated_bandwidth_logs_30min.user_id GROUP BY username ORDER BY SUM(total_tx_bytes) + SUM(total_rx_bytes) DESC")
+    
+def get_by_month():
+    return query_db("SELECT a.username username, CAST(SUM(total_tx_bytes) AS INT) AS total_tx_bytes, CAST(SUM(total_rx_bytes) AS INT) AS total_rx_bytes, CONCAT(YEAR(interval_end), '-', LPAD(MONTH(interval_end), 2, '0')) AS 'month' FROM aggregated_bandwidth_logs_30min LEFT JOIN users AS a ON a.user_id = aggregated_bandwidth_logs_30min.user_id GROUP BY username, 'month' ORDER BY 'month' DESC, SUM(total_tx_bytes) + SUM(total_rx_bytes) DESC;")
+
+def get_by_week():
+    return query_db("SELECT a.username username, CAST(SUM(total_tx_bytes) AS INT) AS total_tx_bytes, CAST(SUM(total_rx_bytes) AS INT) AS total_rx_bytes, CONCAT(YEAR(interval_end), '-', LPAD(WEEK(interval_end), 2, '0')) AS 'week' FROM aggregated_bandwidth_logs_30min LEFT JOIN users AS a ON a.user_id = aggregated_bandwidth_logs_30min.user_id GROUP BY username, 'week' ORDER BY 'week' DESC, SUM(total_tx_bytes) + SUM(total_rx_bytes) DESC;")
+
+def get_by_day():
+    return query_db("SELECT a.username username, CAST(SUM(total_tx_bytes) AS INT) AS total_tx_bytes, CAST(SUM(total_rx_bytes) AS INT) AS total_rx_bytes, CONCAT(YEAR(interval_end), '-', LPAD(MONTH(interval_end), 2, '0'), '-', LPAD(DAY(interval_end), 2, '0')) AS 'day' FROM aggregated_bandwidth_logs_30min LEFT JOIN users AS a ON a.user_id = aggregated_bandwidth_logs_30min.user_id GROUP BY username, 'day' ORDER BY 'day' DESC, SUM(total_tx_bytes) + SUM(total_rx_bytes) DESC;")
+
+def get_real_time(user_id):
+    return query_db("SELECT a.username username, tx_bytes, rx_bytes, timestamp AS 'period' FROM raw_bandwidth_logs LEFT JOIN users AS a ON a.user_id = raw_bandwidth_logs.user_id WHERE a.user_id = %s ORDER BY timestamp DESC LIMIT 1;", [user_id])
+    
 
 init()
 

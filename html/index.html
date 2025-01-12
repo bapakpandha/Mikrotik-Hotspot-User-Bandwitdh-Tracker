@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Camlica Internet Usage</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.kendostatic.com/2015.1.408/styles/kendo.common.min.css" />
+    <link rel="stylesheet" href="https://cdn.kendostatic.com/2015.1.408/styles/kendo.common-bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.kendostatic.com/2015.1.408/styles/kendo.bootstrap.min.css" />
+    <link rel="stylesheet" href="https://cdn.kendostatic.com/2015.1.408/styles/kendo.dataviz.min.css" />
+    <link rel="stylesheet" href="https://cdn.kendostatic.com/2015.1.408/styles/kendo.dataviz.bootstrap.min.css" />
+
+    <script src="https://code.jquery.com/jquery-1.9.1.min.js"></script>
+    <!--<script src="http://ajax.googleapis.com/ajax/libs/angularjs/1.2.16/angular.js"></script>-->
+    <script type="text/javascript" src="https://code.angularjs.org/1.5.8/angular.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/angular-ui-router/0.3.1/angular-ui-router.js"></script>
+    <script src="https://cdn.kendostatic.com/2015.1.408/js/kendo.all.min.js"></script>
+    <script src="https://cdn.kendostatic.com/2015.1.408/js/kendo.timezones.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/angular-chart.js@1.1.1/dist/angular-chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/moment"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-moment"></script>
+
+
+
+    <!--<link rel="stylesheet" href="styles.css" />-->
+
+    <!--[if lt IE 9]>
+        <script src="vendor/html5shiv.js"></script>
+        <script src="vendor/respond.min.js"></script>
+        <![endif]-->
+    <style>
+        .bold {
+            font-weight: 300;
+        }
+
+        .small {
+            color: silver
+        }
+    </style>
+    <script type="text/javascript">
+        angular.module('app', [])
+            .controller('statsController', function ($http, $scope, $interval) {
+                $scope.fetch = function () {
+                    $http.get('./detail')
+                        .then(function (response) {
+                            $scope.detail = response.data
+                        })
+                        .catch(function (err) {
+                            alert(err.statusText)
+                        });
+                    $http.get('./weekly')
+                        .then(function (response) {
+                            $scope.weekly = response.data
+                        })
+                        .catch(function (err) {
+                            alert(err.statusText)
+                        });
+                    $http.get('./monthly')
+                        .then(function (response) {
+                            $scope.monthly = response.data
+                        })
+                        .catch(function (err) {
+                            alert(err.statusText)
+                        });
+                    $http.get('./daily')
+                        .then(function (response) {
+                            $scope.daily = response.data
+                        })
+                        .catch(function (err) {
+                            alert(err.statusText)
+                        });
+                    $http.get('./total')
+                        .then(function (response) {
+                            $scope.total = response.data
+                        })
+                        .catch(function (err) {
+                            alert(err.statusText)
+                        })
+                }
+                $scope.fetch();
+
+                let ctx = document.getElementById('realtimeChart').getContext('2d');
+                let chart = null;
+                let is_init_chart = true;
+
+                function initializeChart() {
+                    chart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: [], // Time labels (x-axis)
+                            datasets: [
+                                {
+                                    label: 'Tx Bytes',
+                                    data: [], // Data points for Tx Bytes
+                                    borderColor: 'rgba(75, 192, 192, 1)',
+                                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                                    fill: true,
+                                    tension: 0.4, // Smooth line
+                                },
+                                {
+                                    label: 'Rx Bytes',
+                                    data: [], // Data points for Rx Bytes
+                                    borderColor: 'rgba(153, 102, 255, 1)',
+                                    backgroundColor: 'rgba(153, 102, 255, 0.2)',
+                                    fill: true,
+                                    tension: 0.4, // Smooth line
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {
+                                tooltip: {
+                                    callbacks: {
+                                        label: function (context) {
+                                            return `${context.dataset.label}: ${context.raw} bytes`;
+                                        }
+                                    }
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    type: 'time', // Use time scale
+                                    time: {
+                                        unit: 'second'
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'Time'
+                                    }
+                                },
+                                y: {
+                                    beginAtZero: true,
+                                    title: {
+                                        display: true,
+                                        text: 'Megabytes'
+                                    }
+                                }
+                            }
+                        }
+                    });
+
+                }
+
+                $scope.fetchRealtimeData = function () {
+                    const postData = { user_id: 1 }; // Example post data
+                    $http.post('./monitor', postData)
+                        .then(function (response) {
+                            const data = response.data;
+
+                            // Assuming response contains array of objects
+                            if (data && data.length) {
+                                const latestPoint = data[0]; // Get the first object
+                                const period = latestPoint.period;
+                                const txBytes = latestPoint.tx_bytes;
+                                const rxBytes = latestPoint.rx_bytes;
+
+                                // Add new data to the chart datasets
+                                chart.data.labels.push(period); // Add time to x-axis
+                                chart.data.datasets[0].data.push(txBytes); // Add Tx Bytes
+                                chart.data.datasets[1].data.push(rxBytes); // Add Rx Bytes
+
+                                // Remove old data points to keep chart responsive (e.g., max 10 points)
+                                if (chart.data.labels.length > 30) {
+                                    chart.data.labels.shift();
+                                    chart.data.datasets[0].data.shift();
+                                    chart.data.datasets[1].data.shift();
+                                }
+
+                                chart.update();
+                            }
+                        })
+                        .catch(function (err) {
+                            alert(`Error fetching real-time data: ${err.statusText}`);
+                        });
+                };
+
+                initializeChart();
+                $scope.fetchRealtimeData();
+                $interval($scope.fetchRealtimeData, 10000);
+            }
+            )
+            .filter('data', function () {
+                return function (input, optional1, optional2) {
+                    output = input;
+                    kb = 1024;
+                    mb = kb * 1024;
+                    gb = mb * 1024;
+                    if (input > gb)
+                        output = (input / gb).toFixed(2) + ' GiB';
+                    else if (input > mb)
+                        output = (input / mb).toFixed(2) + ' MiB';
+                    else
+                        output = (input / kb).toFixed(2) + ' KiB';
+                    return output;
+                }
+
+            });
+    </script>
+</head>
+
+<body ng-app="app">
+    <div id="example" class="container">
+        <section class="well">
+            <h2 class="ra-well-title">Getting started</h2>
+            <p>
+                This is a simple web application to monitor internet usage of Camlica. It uses AngularJS and Kendo UI.
+            </p>
+        </section>
+        <section ng-controller="statsController as ctrl">
+            <div class="bs-example">
+                <h2>Real-Time Data Chart</h2>
+                <canvas id="realtimeChart" width="400" height="200"></canvas>
+                <div class="panel-body">
+                    <input type="button" class="btn btn-small btn-default" value="Refresh" ng-click="fetch()" />
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">Total Usage </div>
+                    <div class="panel-body">
+                        <p></p>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th class="col-xs-3">Host</th>
+                                <th class="col-xs-3"></th>
+                                <th class="col-xs-3 text-right">Down</th>
+                                <th class="col-xs-3 text-right">Up</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="item in total">
+                                <td title="{{item.username}}"><span
+                                        ng-class="item.username ? 'bold' : 'small'">{{item.alias ||
+                                        item.username}}</span></td>
+                                <td></td>
+                                <td class="text-right">{{item.total_rx_bytes | data}}</td>
+                                <td class="text-right">{{item.total_tx_bytes | data}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">Daily Usage </div>
+                    <div class="panel-body">
+                        <p></p>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th class="col-xs-3">Host</th>
+                                <th>Day</th>
+                                <th class="col-xs-3 text-right">Down</th>
+                                <th class="col-xs-3 text-right">Up</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="item in daily">
+                                <td title="{{item.username}}"><span
+                                        ng-class="item.username ? 'bold' : 'small'">{{item.alias ||
+                                        item.username}}</span></td>
+                                <td>{{item.day}}</td>
+                                <td class="text-right">{{item.total_rx_bytes | data}}</td>
+                                <td class="text-right">{{item.total_tx_bytes | data}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">Weekly Usage </div>
+                    <div class="panel-body">
+                        <p></p>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th class="col-xs-3">Host</th>
+                                <th>Week</th>
+                                <th class="col-xs-3 text-right">Down</th>
+                                <th class="col-xs-3 text-right">Up</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="item in weekly">
+                                <td title="{{item.username}}"><span
+                                        ng-class="item.username ? 'bold' : 'small'">{{item.alias ||
+                                        item.username}}</span></td>
+                                <td>{{item.week}}</td>
+                                <td class="text-right">{{item.total_rx_bytes | data}}</td>
+                                <td class="text-right">{{item.total_tx_bytes | data}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">Monthly Usage </div>
+                    <div class="panel-body">
+                        <p></p>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th class="col-xs-3">Host</th>
+                                <th>Month</th>
+                                <th class="col-xs-3 text-right">Down</th>
+                                <th class="col-xs-3 text-right">Up</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="item in monthly">
+                                <td title="{{item.username}}"><span
+                                        ng-class="item.username ? 'bold' : 'small'">{{item.alias ||
+                                        item.username}}</span></td>
+                                <td>{{item.month}}</td>
+                                <td class="text-right">{{item.total_rx_bytes | data}}</td>
+                                <td class="text-right">{{item.total_tx_bytes | data}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="panel panel-default">
+                    <div class="panel-heading">Detail Usage </div>
+                    <div class="panel-body">
+                        <p></p>
+                    </div>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th class="col-xs-3">Host</th>
+                                <th></th>
+                                <th class="col-xs-3 text-right">Down</th>
+                                <th class="col-xs-3 text-right">Up</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr ng-repeat="item in detail">
+                                <td>{{item.username}}</td>
+                                <td>{{item.period}}</td>
+                                <td class="text-right">{{item.total_rx_bytes | data}}</td>
+                                <td class="text-right">{{item.total_tx_bytes | data}}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <footer>Copyright &copy; 2016</footer>
+    </div>
+</body>
+
+</html>
